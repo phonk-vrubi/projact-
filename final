@@ -1,0 +1,291 @@
+import sys
+import pygame
+import os
+
+FPS = 60
+pygame.init()
+pygame.mixer.init()
+size = width, height = 1350, 650
+screen = pygame.display.set_mode(size, pygame.FULLSCREEN)
+clock = pygame.time.Clock()
+
+player = None
+
+all_sprites = pygame.sprite.Group()
+tiles_group = pygame.sprite.Group()
+portal_group = pygame.sprite.Group()
+player_group = pygame.sprite.Group()
+mob_group = pygame.sprite.Group()
+d_borders = pygame.sprite.Group()
+u_borders = pygame.sprite.Group()
+vertical_borders = pygame.sprite.Group()
+pygame.key.set_repeat(1, 50)
+levels = ['level1.txt', 'level2.txt', 'level3.txt', 'level4.txt', 'level5.txt']
+now_level = 0
+
+
+def terminate():
+    pygame.quit()
+    sys.exit()
+
+
+def delete():
+    global player, mob, portal, level_x, level_y, running, restart, all_sprites, tiles_group, player_group, mob_group, portal_group, u_borders, d_borders, vertical_borders
+    player, mob, portal, level_x, level_y = None, None, None, None, None
+    all_sprites = pygame.sprite.Group()
+    tiles_group = pygame.sprite.Group()
+    portal_group = pygame.sprite.Group()
+    player_group = pygame.sprite.Group()
+    mob_group = pygame.sprite.Group()
+    d_borders = pygame.sprite.Group()
+    u_borders = pygame.sprite.Group()
+    vertical_borders = pygame.sprite.Group()
+
+
+def restart_game():
+    delete()
+    global player, mob, portal, level_x, level_y, running, restart, now_level
+    now_level = 0
+    player, mob, portal, level_x, level_y = generate_level(load_level('level1.txt'))
+
+
+def new_level():
+    delete()
+    global player, mob, portal, level_x, level_y, running, restart, now_level, levels
+    now_level += 1
+    player, mob, portal, level_x, level_y = generate_level(load_level(levels[now_level]))
+
+
+def lose_screen():
+    fon = pygame.transform.scale(load_image('death_screen.png'), size)
+    screen.blit(fon, (0, 0))
+
+    while True:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                terminate()
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                if event.pos[1] >= 480 and event.pos[1] <= 540:
+                    if event.pos[0] >= 920 and event.pos[0] <= 1010:
+                        terminate()
+                    elif event.pos[0] >= 310 and event.pos[0] <= 430:
+                        restart_game()
+                        return
+        pygame.display.flip()
+        clock.tick(FPS)
+
+
+def win_screen():
+    fon = pygame.transform.scale(load_image('win_screen.png'), size)
+    screen.blit(fon, (0, 0))
+
+    while True:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                terminate()
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_KP_ENTER:
+                    terminate()
+        pygame.display.flip()
+        clock.tick(FPS)
+
+
+def pause_screen():
+    fon = pygame.transform.scale(load_image('pause_screen.png'), size)
+    screen.blit(fon, (0, 0))
+
+    while True:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                terminate()
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                if event.pos[0] >= 540 and event.pos[0] <= 800 and event.pos[1] >= 400 and event.pos[1] <= 440:
+                    terminate()
+                elif event.pos[0] >= 500 and event.pos[0] <= 850 and event.pos[1] >= 340 and event.pos[1] <= 380:
+                    restart_game()
+                    return
+                elif event.pos[0] >= 400 and event.pos[0] <= 920 and event.pos[1] >= 280 and event.pos[1] <= 320:
+                    return
+        pygame.display.flip()
+        clock.tick(FPS)
+
+
+def load_image(name, colorkey=None):
+    fullname = os.path.join('data', name)
+    image = pygame.image.load(fullname).convert()
+    if colorkey is not None:
+        if colorkey == -1:
+            colorkey = image.get_at((1, 0))
+            image.set_colorkey(colorkey)
+        else:
+            image = image.convert_alpha()
+    return image
+
+
+def load_level(filename):
+    filename = "data/" + filename
+    with open(filename, 'r') as mapFile:
+        level_map = [line.strip() for line in mapFile]
+    max_width = max(map(len, level_map))
+    return list(map(lambda x: x.ljust(max_width, ','), level_map))
+
+
+tile_images = {'wall': load_image('box.png')}
+portal_image = load_image('portal.png')
+player_image = [load_image('mar.png', -1), load_image('mar2.png', -1)]
+mob_image = load_image('goomba.png', -1)
+
+tile_width = tile_height = 50
+
+
+class Mob(pygame.sprite.Sprite):
+    def __init__(self, pos_x, pos_y):
+        super().__init__(mob_group, all_sprites)
+        self.image = mob_image
+        self.rect = self.image.get_rect().move(tile_width * pos_x, tile_height * pos_y - 45)
+        self.mask = pygame.mask.from_surface(self.image)
+        self.napr_x = -1
+        self.yvel = 0
+        self.gravity = 0.05
+        self.onGround = False
+
+    def update(self, keys):
+        if pygame.sprite.spritecollideany(self, u_borders):
+            self.onGround = True
+        else:
+            self.onGround = False
+        if self.napr_x == 1:
+            self.rect.x += 1
+            if pygame.sprite.spritecollideany(self, vertical_borders):
+                self.rect.x -= 1
+                self.napr_x = -1
+        if self.napr_x == -1:
+            self.rect.x -= 1
+            if pygame.sprite.spritecollideany(self, vertical_borders):
+                self.rect.x += 1
+                self.napr_x = 1
+        if not self.onGround:
+            self.yvel += self.gravity
+            self.rect.y += self.yvel
+        else:
+            self.yvel = 0
+
+
+class Tile(pygame.sprite.Sprite):
+    def __init__(self, tile_type, pos_x, pos_y):
+        super().__init__(tiles_group, all_sprites)
+        self.image = tile_images[tile_type]
+        self.rect = self.image.get_rect().move(tile_width * pos_x, tile_height * pos_y)
+
+
+class Portal(pygame.sprite.Sprite):
+    def __init__(self, pos_x, pos_y):
+        super().__init__(portal_group, all_sprites)
+        self.image = portal_image
+        self.rect = self.image.get_rect().move(tile_width * pos_x, tile_height * pos_y - 25)
+
+
+class Border(pygame.sprite.Sprite):
+    def __init__(self, x1, y1, x2, y2, w=None):
+        super().__init__(all_sprites)
+        if x1 == x2:
+            self.add(vertical_borders)
+            self.image = pygame.Surface([1, y2 - y1])
+            self.rect = pygame.Rect(x1 * 50, y1 * 50 + 10, 1, (y2 - y1) * 50 - 20)
+        else:
+            if w == "d":
+                self.add(d_borders)
+            else:
+                self.add(u_borders)
+            self.image = pygame.Surface([x2 - x1, 1])
+            self.rect = pygame.Rect(x1 * 50, y1 * 50, (x2 - x1) * 50, 1)
+
+
+class Player(pygame.sprite.Sprite):
+    def __init__(self, pos_x, pos_y):
+        super().__init__(player_group, all_sprites)
+        self.image = player_image[1]
+        self.rect = self.image.get_rect().move(tile_width * pos_x + 15, tile_height * pos_y - 39)
+        self.mask = pygame.mask.from_surface(self.image)
+        self.jump_power = 4
+        self.gravity = 0.05
+        self.yvel = 0
+        self.onGround = False
+
+    def update(self, keys):
+        if keys[pygame.K_u]:
+            self.gravity = 0.04
+        if keys[pygame.K_i]:
+            self.gravity = 0.05
+        if keys[pygame.K_o]:
+            self.gravity = 0.06
+        if pygame.sprite.spritecollideany(self, portal_group):
+            if now_level == 3:
+                win_screen()
+            else:
+                new_level()
+        if pygame.sprite.spritecollideany(self, mob_group) or self.rect.y >= size[1]:
+            lose_screen()
+        if pygame.sprite.spritecollideany(self, u_borders):
+            self.onGround = True
+        else:
+            self.onGround = False
+        if keys[pygame.K_LEFT]:
+            self.image = player_image[0]
+            self.rect.x -= 2
+            if pygame.sprite.spritecollideany(self, vertical_borders):
+                self.rect.x += 2
+        if keys[pygame.K_RIGHT]:
+            self.image = player_image[1]
+            self.rect.x += 2
+            if pygame.sprite.spritecollideany(self, vertical_borders):
+                self.rect.x -= 2
+        if keys[pygame.K_SPACE] and self.onGround:
+            self.yvel = 0
+            self.yvel = - self.jump_power
+            self.rect.y += self.yvel
+        if not self.onGround:
+            if pygame.sprite.spritecollideany(self, d_borders):
+                self.yvel = 1
+            self.yvel += self.gravity
+            self.rect.y += self.yvel
+
+
+def generate_level(level):
+    new_player, x, y = None, None, None
+    for y in range(len(level)):
+        for x in range(len(level[y])):
+            if level[y][x] == '#':
+                Tile('wall', x, y)
+                Border(x, y, x + 1, y, 'u')
+                Border(x, y, x, y + 1)
+                Border(x + 1, y, x + 1, y + 1)
+                Border(x, y + 1, x + 1, y + 1, 'd')
+            elif level[y][x] == "$":
+                portal = Portal(x, y)
+            elif level[y][x] == '@':
+                new_player = Player(x, y + 1)
+            elif level[y][x] == '!':
+                new_mob = Mob(x, y + 1)
+    return new_player, new_mob, portal, x, y
+
+
+player, mob, portal, level_x, level_y = generate_level(load_level('level1.txt'))
+running = True
+pygame.mixer.music.set_volume(100)
+pygame.mixer.music.load('data/bach.mp3')
+pygame.mixer.music.play(0)
+while running:
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+        if event.type == pygame.KEYDOWN:
+            if pygame.key.get_pressed()[pygame.K_ESCAPE]:
+                pause_screen()
+    pygame.time.delay(4)
+    all_sprites.update(pygame.key.get_pressed())
+    screen.fill((22, 22, 22))
+    all_sprites.draw(screen)
+    player_group.draw(screen)
+    pygame.display.flip()
+pygame.quit()
